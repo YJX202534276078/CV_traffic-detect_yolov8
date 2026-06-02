@@ -171,3 +171,10 @@ pnnx*
 
 # calibration image
 calibration_*.npy
+
+# Traffic detection project datasets and generated outputs
+Traffic_detection_project/Traffic_detection_dataset/dataset_file/
+Traffic_detection_project/Traffic_detection_dataset/images_videos_test/
+Traffic_detection_project/Traffic_detection_train/results/
+Traffic_detection_project/Traffic_detection_system/Target_detection_results/
+Traffic_detection_project/Traffic_detection_system/Traffic_violation_screenshot/

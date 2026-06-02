@@ -57,6 +57,7 @@ from .block import (
     ResNetLayer,
     SCDown,
     TorchVision,
+    C2f_DCN,
 )
 from .conv import (
     CBAM,
@@ -73,6 +74,16 @@ from .conv import (
     LightConv,
     RepConv,
     SpatialAttention,
+    ShuffleAttention,
+    SEAttention,
+    GAM,
+    CoordAtt,
+    SimAM,
+    SKAttention,
+    ECA,
+    S2Attention,
+    EMAttention,
+    LSKA,
 )
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
 from .transformer import (
@@ -160,4 +171,15 @@ __all__ = (
     "PSA",
     "TorchVision",
     "Index",
+    "ShuffleAttention",
+    "SEAttention",
+    "GAM",
+    "CoordAtt",
+    "SimAM",
+    "SKAttention",
+    "ECA",
+    "S2Attention",
+    "EMAttention",
+    "LSKA",
+    "C2f_DCN",
 )

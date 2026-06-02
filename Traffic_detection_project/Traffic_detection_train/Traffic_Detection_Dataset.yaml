@@ -1,0 +1,17 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# DOTA 1.5 dataset https://captain-whu.github.io/DOTA/index.html for object detection in aerial images by Wuhan University
+# Documentation: https://docs.ultralytics.com/datasets/obb/dota-v2/
+# Example usage: yolo train model=yolov8n-obb.pt data=DOTAv1.5.yaml
+# parent
+# ├── ultralytics
+# └── datasets
+#     └── dota1.5  ← downloads here (2GB)
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+train: ../Traffic_detection_dataset/dataset_file/roboflow_721_x3/train/images # train images
+val: ../Traffic_detection_dataset/dataset_file/roboflow_721_x3/valid/images # val images
+test: ../Traffic_detection_dataset/dataset_file/roboflow_721_x3/test/images # test images (optional)
+
+# Classes for DOTA 1.5
+nc: 5
+names: ['Car', 'Truck', 'Person', 'Two wheeled vehicle', 'Bus']

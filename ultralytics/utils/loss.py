@@ -12,6 +12,77 @@ from ultralytics.utils.torch_utils import autocast
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
 
+class EIoU(nn.Module):
+    """
+    EIoU loss by <url id="cvl3piique5p9if0s8t0" type="url" status="parsed" title="" wc="28652">https://arxiv.org/abs/2008.13367</url>
+    """
+    def __init__(self, iou_ratio=1.5):
+        super().__init__()
+        self.iou_ratio = iou_ratio
+
+    def forward(self, pred, target):
+        """Calculates EIoU loss between predicted and target boxes"""
+        # Bounding box coordinates
+        pred_left, pred_top, pred_right, pred_bottom = pred.unbind(-1)
+        target_left, target_top, target_right, target_bottom = target.unbind(-1)
+
+        # Intersection area
+        inter_left = torch.max(pred_left, target_left)
+        inter_top = torch.max(pred_top, target_top)
+        inter_right = torch.min(pred_right, target_right)
+        inter_bottom = torch.min(pred_bottom, target_bottom)
+        inter_area = (inter_right - inter_left).clamp(0) * (inter_bottom - inter_top).clamp(0)
+
+        # Union area
+        pred_area = (pred_right - pred_left) * (pred_bottom - pred_top)
+        target_area = (target_right - target_left) * (target_bottom - target_top)
+        union_area = pred_area + target_area - inter_area
+
+        # IoU calculation with epsilon to avoid division by zero
+        iou = inter_area / (union_area + 1e-7)
+
+        # Distance penalty term
+        pred_center = torch.stack([(pred_left + pred_right) / 2, (pred_top + pred_bottom) / 2], dim=-1)
+        target_center = torch.stack([(target_left + target_right) / 2, (target_top + target_bottom) / 2], dim=-1)
+        distance_penalty = torch.sum((pred_center - target_center) ** 2, dim=-1)
+
+        # EIoU loss
+        loss = 1 - iou ** self.iou_ratio + distance_penalty / (union_area + 1e-7)
+        return loss.mean()
+
+class WIoU_3(nn.Module):
+    """
+    WIoUv3 loss by https://arxiv.org/abs/2301.10051
+    Dynamic gradient adjustment for more balanced training
+    """
+    def __init__(self, iou_ratio=1.5):
+        super().__init__()
+        self.iou_ratio = iou_ratio
+
+    def forward(self, pred, target):
+        """Calculates WIoUv3 loss between predicted and target boxes"""
+        # Bounding box coordinates
+        pred_left, pred_top, pred_right, pred_bottom = pred.unbind(-1)
+        target_left, target_top, target_right, target_bottom = target.unbind(-1)
+
+        # Intersection area
+        inter_left = torch.max(pred_left, target_left)
+        inter_top = torch.max(pred_top, target_top)
+        inter_right = torch.min(pred_right, target_right)
+        inter_bottom = torch.min(pred_bottom, target_bottom)
+        inter_area = (inter_right - inter_left).clamp(0) * (inter_bottom - inter_top).clamp(0)
+
+        # Union area
+        pred_area = (pred_right - pred_left) * (pred_bottom - pred_top)
+        target_area = (target_right - target_left) * (target_bottom - target_top)
+        union_area = pred_area + target_area - inter_area
+
+        # IoU calculation with epsilon to avoid division by zero
+        iou = inter_area / (union_area + 1e-7)
+
+        # Dynamic gradient adjustment
+        loss = 1 - iou ** self.iou_ratio
+        return loss.mean()
 
 class VarifocalLoss(nn.Module):
     """
@@ -83,8 +154,8 @@ class DFLoss(nn.Module):
         wl = tr - target  # weight left
         wr = 1 - wl  # weight right
         return (
-            F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape) * wl
-            + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
+                F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape) * wl
+                + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
         ).mean(-1, keepdim=True)
 
 
@@ -95,12 +166,13 @@ class BboxLoss(nn.Module):
         """Initialize the BboxLoss module with regularization maximum and DFL settings."""
         super().__init__()
         self.dfl_loss = DFLoss(reg_max) if reg_max > 1 else None
+        self.wiou = WIoU_3()
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+        iou_loss = self.wiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])  # 使用WIoU计算损失
+        loss_iou = (iou_loss * weight).sum() / target_scores_sum
 
         # DFL loss
         if self.dfl_loss:
@@ -238,7 +310,7 @@ class v8DetectionLoss:
             gt_labels,
             gt_bboxes,
             mask_gt,
-        )
+            )
 
         target_scores_sum = max(target_scores.sum(), 1)
 
@@ -312,7 +384,7 @@ class v8SegmentationLoss(v8DetectionLoss):
             gt_labels,
             gt_bboxes,
             mask_gt,
-        )
+            )
 
         target_scores_sum = max(target_scores.sum(), 1)
 
@@ -330,7 +402,7 @@ class v8SegmentationLoss(v8DetectionLoss):
                 target_scores,
                 target_scores_sum,
                 fg_mask,
-            )
+                )
             # Masks loss
             masks = batch["masks"].to(self.device).float()
             if tuple(masks.shape[-2:]) != (mask_h, mask_w):  # downsample
@@ -353,7 +425,7 @@ class v8SegmentationLoss(v8DetectionLoss):
 
     @staticmethod
     def single_mask_loss(
-        gt_mask: torch.Tensor, pred: torch.Tensor, proto: torch.Tensor, xyxy: torch.Tensor, area: torch.Tensor
+            gt_mask: torch.Tensor, pred: torch.Tensor, proto: torch.Tensor, xyxy: torch.Tensor, area: torch.Tensor
     ) -> torch.Tensor:
         """
         Compute the instance segmentation loss for a single image.
@@ -377,16 +449,16 @@ class v8SegmentationLoss(v8DetectionLoss):
         return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).sum()
 
     def calculate_segmentation_loss(
-        self,
-        fg_mask: torch.Tensor,
-        masks: torch.Tensor,
-        target_gt_idx: torch.Tensor,
-        target_bboxes: torch.Tensor,
-        batch_idx: torch.Tensor,
-        proto: torch.Tensor,
-        pred_masks: torch.Tensor,
-        imgsz: torch.Tensor,
-        overlap: bool,
+            self,
+            fg_mask: torch.Tensor,
+            masks: torch.Tensor,
+            target_gt_idx: torch.Tensor,
+            target_bboxes: torch.Tensor,
+            batch_idx: torch.Tensor,
+            proto: torch.Tensor,
+            pred_masks: torch.Tensor,
+            imgsz: torch.Tensor,
+            overlap: bool,
     ) -> torch.Tensor:
         """
         Calculate the loss for instance segmentation.
@@ -492,7 +564,7 @@ class v8PoseLoss(v8DetectionLoss):
             gt_labels,
             gt_bboxes,
             mask_gt,
-        )
+            )
 
         target_scores_sum = max(target_scores.sum(), 1)
 
@@ -532,7 +604,7 @@ class v8PoseLoss(v8DetectionLoss):
         return y
 
     def calculate_keypoints_loss(
-        self, masks, target_gt_idx, keypoints, batch_idx, stride_tensor, target_bboxes, pred_kpts
+            self, masks, target_gt_idx, keypoints, batch_idx, stride_tensor, target_bboxes, pred_kpts
     ):
         """
         Calculate the keypoints loss for the model.
@@ -684,7 +756,7 @@ class v8OBBLoss(v8DetectionLoss):
             gt_labels,
             gt_bboxes,
             mask_gt,
-        )
+            )
 
         target_scores_sum = max(target_scores.sum(), 1)
 

@@ -1,0 +1,45 @@
+# YOLOv8n with EMA (Efficient Multi-scale Attention) + LSKA (Large Selective Kernel Attention)
+# Parameters
+nc: 80  # COCO默认类别数（根据任务调整）
+scales:
+  n: [0.33, 0.25, 1024]  # depth, width, max_channels
+
+# Backbone
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]    # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]   # 1-P2/4
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]   # 3-P3/8
+  - [-1, 6, C2f, [256, True]]
+  - [-1, 1, EMAttention, [256]]          # EMA@P3（增强多尺度细节）
+  - [-1, 1, Conv, [512, 3, 2]]   # 5-P4/16
+  - [-1, 6, C2f, [512, True]]
+  - [-1, 1, LSKA, [512]]         # LSKA@P4（大核空间感知）
+  - [-1, 1, Conv, [1024, 3, 2]]  # 7-P5/32
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, EMAttention, [1024]]         # EMA@P5（高层特征融合）
+  - [-1, 1, LSKA, [1024]]        # LSKA@P5（大目标优化）
+  - [-1, 1, SPPF, [1024, 5]]     # 12
+
+# Head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
+  - [[-1, 8], 1, Concat, [1]]    # cat P4（注意索引调整）
+  - [-1, 3, C2f, [512]]
+  - [-1, 1, EMAttention, [512]]          # EMA@Neck-P4
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
+  - [[-1, 5], 1, Concat, [1]]    # cat P3
+  - [-1, 3, C2f, [256]]
+  - [-1, 1, LSKA, [256]]         # LSKA@Neck-P3（小目标增强）
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 16], 1, Concat, [1]]   # cat P4
+  - [-1, 3, C2f, [512]]
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 12], 1, Concat, [1]]   # cat P5
+  - [-1, 3, C2f, [1024]]
+
+  - [[18, 21, 24], 1, Detect, [nc]]  # Detect(P3, P4, P5)

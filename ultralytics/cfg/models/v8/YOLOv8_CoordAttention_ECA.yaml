@@ -1,0 +1,43 @@
+# YOLOv8n with CoordAttention + ECA
+# Parameters
+nc: 80  # 类别数
+scales:
+  n: [0.33, 0.25, 1024]
+
+# Backbone
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]    # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]   # 1-P2/4
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]   # 3-P3/8
+  - [-1, 6, C2f, [256, True]]
+  - [-1, 1, ECA, [256]]          # ECA@P3（轻量通道注意力）
+  - [-1, 1, Conv, [512, 3, 2]]   # 5-P4/16
+  - [-1, 6, C2f, [512, True]]
+  - [-1, 1, CoordAtt, [512]]     # CoordAtt@P4（坐标感知）
+  - [-1, 1, Conv, [1024, 3, 2]]  # 7-P5/32
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, CoordAtt, [1024]]    # CoordAtt@P5
+  - [-1, 1, SPPF, [1024, 5]]     # 11
+
+# Head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
+  - [[-1, 7], 1, Concat, [1]]    # cat P4
+  - [-1, 3, C2f, [512]]
+  - [-1, 1, ECA, [512]]          # ECA@Neck-P4
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]
+  - [[-1, 4], 1, Concat, [1]]    # cat P3
+  - [-1, 3, C2f, [256]]
+  - [-1, 1, ECA, [256]]          # ECA@Neck-P3
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 15], 1, Concat, [1]]   # cat P4
+  - [-1, 3, C2f, [512]]
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 11], 1, Concat, [1]]   # cat P5
+  - [-1, 3, C2f, [1024]]
+
+  - [[16, 19, 22], 1, Detect, [nc]]  # Detect(P3, P4, P5)
